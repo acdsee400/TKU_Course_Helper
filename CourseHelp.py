@@ -95,11 +95,11 @@ def login(cwsession,account,password):
             print("登入失敗")
             login_state=1
     return r,login_state
-def select(cwsession,r):
+def select(cwsession,r,selct_num):
     viewstate,vstgen,eventval=findLoginData(r.text)
     payload_select={"__EVENTTARGET":"btnAdd","__EVENTARGUMENT":""\
              ,"__VIEWSTATE":str(viewstate),"__VIEWSTATEGENERATOR":str(vstgen),\
-             "__EVENTVALIDATION":str(eventval),"txtCosEleSeq":"0851"}
+             "__EVENTVALIDATION":str(eventval),"txtCosEleSeq":str(selct_num)}
     r=cwsession.post(actionurl,data=payload_select,stream=True)
     #print(r.text)
     respdata=re.findall("[E,I][0-9]{3}",r.text)
@@ -131,6 +131,22 @@ def main():
         check=int(input("以上資料是否正確? 1:正確,2:錯誤:"))
         if(check==1):
             break
+    sel_array=[]
+    print("請輸入你想選的課程編號,輸入完成後請輸入0")
+    while(1):
+        sel_num=int(input("課程編號:"))
+        if(sel_num==0):
+            print("以下是否為你想選的課程編號?")
+            print(sel_array)
+            sel_chk=int(input("確認? 1:正確 ,2:錯誤:"))
+            if(sel_chk==1):
+                break
+            else:
+                #print("Clear Array")
+                sel_array=[]
+        else:
+            sel_array.append(sel_num)
+            print("已輸入編號:"+str(sel_num))
     while(1):
         print("準備進行系統介接")
         print("登入中....")
@@ -138,13 +154,11 @@ def main():
         while(login_state):
             r,lgs=login(cwsession,account,password)
             login_state=lgs
-        #print(r.text)
-        #print(r.text)
-        #print(r.headers)
         print("迴圈加選中")
         for i in range(0,35):
             print(str(i+1)+"/"+"35")
-            r=select(cwsession,r)
+            for sel_send in sel_array:
+                r=select(cwsession,r,sel_send)
             sleep(2)
         logout(cwsession,r)
 main()
