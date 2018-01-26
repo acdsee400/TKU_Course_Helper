@@ -1,17 +1,9 @@
 import shutil
 import requests
-import cv2
 import re
-import numpy as np
-from PIL import Image
+import json
 from bs4 import BeautifulSoup
-from io import BytesIO
-import keras.preprocessing
-import h5py
 from time import sleep
-from keras.models import Model
-#from keras.models import load_model
-from keras.preprocessing import image
 captcha_word = "_0123456789"
 word_class=len(captcha_word)
 account=""
@@ -19,67 +11,36 @@ password=""
 baseurl="http://www.ais.tku.edu.tw/EleCos/"
 homeurl=baseurl+"login.aspx"
 actionurl=baseurl+"action.aspx"
-def genCode(img):
-    width = 120
-    height = 32
-    model=keras.models.load_model("model/captcha_model_v3.h5")
-    #model.load_weights("model/captcha_model_weights_v3.h5")
-    X_test = np.zeros((1, height, width,3), dtype = np.float32)
-    X_test[0]=image.img_to_array(img)
-    result=model.predict(X_test)
-    vex_test = vec_to_captcha(result[0])
-    return vex_test
-def vec_to_captcha(vec):
-    text = []
-    vec[vec < 0.5] = 0
-    char_pos = vec.nonzero()[0]
-    for i, ch in enumerate(char_pos):
-        text.append(captcha_word[ch % word_class])
-    return ''.join(text)
+verfurl=baseurl+"Handler1.ashx"
 def findLoginData(html_doc):
     soup = BeautifulSoup(html_doc, 'html.parser')
     viewstate=soup.find(id="__VIEWSTATE")
     viewstategenerator=soup.find(id="__VIEWSTATEGENERATOR")
     eventval=soup.find(id="__EVENTVALIDATION")
     return viewstate["value"],viewstategenerator["value"],eventval["value"]
-def RemoveIntef(img):
-    img.setflags(write=1)
-    h,w,c=img.shape
-    #print(h,w,c)
-    for i in range(w):
-        for j in range(h):
-            if(img[j][i][3]!=255):
-                img[j][i][0]=0
-                img[j][i][1]=128
-                img[j][i][2]=0
-                img[j][i][3]=255
-    return img
-def ImgThreshold(img):
-    img=np.asarray(img)
-    img=RemoveIntef(img)
-    img=cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
-    _,th = cv2.threshold(img,0,255,\
-                         cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
-    return th
 def getVerfcode(cwsession):
-    #cwsession=requests.Session()
+    looktable={"cfcd208495d565ef66e7dff9f98764da":"0",\
+    "c4ca4238a0b923820dcc509a6f75849b":"1",\
+    "c81e728d9d4c2f636f067f89cc14862c":"2",\
+    "eccbc87e4b5ce2fe28308fd9f2a7baf3":"3",\
+    "a87ff679a2f3e71d9181a67b7542122c":"4",\
+    "e4da3b7fbbce2345d7772b0674a318d5":"5",\
+    "1679091c5a880faf6fb5e6087eb1b2dc":"6",\
+    "8f14e45fceea167a5a36dedd4bea2543":"7",\
+    "c9f0f895fb98ab9159f51fd0297e236d":"8",\
+    "45c48cce2e2d7fbdea1afc51c7c6ad26":"9"}
     r=cwsession.get(homeurl)
     r.encoding="utf8"
-    #print(r.text)
-    verfcode_loc=re.findall("BaseData/confirm.ashx\?s=+[0-9]*",\
-                            r.text)
-    print(verfcode_loc[0])
-    vcdata=cwsession.get(baseurl+verfcode_loc[0],\
-                        stream=True)
+    vcdata=cwsession.get(verfurl)
     if vcdata.status_code == 200:
-        #print("Success Getting Verfcode")
-        #print(vcdata.content)
-        verfcode_raw=Image.open(BytesIO(vcdata.content))
+        vc_array=json.loads(vcdata.text)
+        vc_ans=[]
+        for raw_num in vc_array:
+            vc_ans.append(looktable[str(raw_num)])
+        verfcode_raw="".join(vc_ans)
     return verfcode_raw,r
 def login(cwsession,account,password):
-    verf_code,r=getVerfcode(cwsession)
-    verfimg=Image.fromarray(ImgThreshold(verf_code))
-    vfcode=genCode(verfimg)
+    vfcode,r=getVerfcode(cwsession)
     print("驗證碼"+vfcode)
     viewstate,vstgen,eventval=findLoginData(r.text)
     payload_login={"txtStuNo":str(account),"txtPSWD":str(password),"txtCONFM":str(vfcode),"__EVENTTARGET":"btnLogin","__EVENTARGUMENT":""\
@@ -96,6 +57,7 @@ def login(cwsession,account,password):
             login_state=1
     return r,login_state
 def select(cwsession,r,selct_num):
+    print("正在加選:"+str(selct_num))
     viewstate,vstgen,eventval=findLoginData(r.text)
     payload_select={"__EVENTTARGET":"btnAdd","__EVENTARGUMENT":""\
              ,"__VIEWSTATE":str(viewstate),"__VIEWSTATEGENERATOR":str(vstgen),\
@@ -103,16 +65,18 @@ def select(cwsession,r,selct_num):
     r=cwsession.post(actionurl,data=payload_select,stream=True)
     #print(r.text)
     respdata=re.findall("[E,I][0-9]{3}",r.text)
-    print(respdata)
-    for repcode in respdata:
-        if(repcode=="I000"):
-            print("加選成功")
-            break
-        elif(repcode=="E054"):
-            print("名額已滿")
-        elif(repcode=="E999"):
-            print("加選失敗")
-            break
+    #print(respdata)
+    while(1):
+        for repcode in respdata:
+            if(repcode=="I000"):
+                print("加選成功")
+            if(repcode=="E054"):
+                print("名額已滿")
+            if(repcode=="E045"):
+                print("重複加選")
+            elif(repcode=="E999"):
+                print("加選失敗")
+        break
     return r
 def logout(cwsession,r):
     viewstate,vstgen,eventval=findLoginData(r.text)
@@ -134,12 +98,12 @@ def main():
     sel_array=[]
     print("請輸入你想選的課程編號,輸入完成後請輸入0")
     while(1):
-        sel_num=int(input("課程編號:"))
-        if(sel_num==0):
+        sel_num=input("課程編號:")
+        if(sel_num=="0"):
             print("以下是否為你想選的課程編號?")
             print(sel_array)
-            sel_chk=int(input("確認? 1:正確 ,2:錯誤:"))
-            if(sel_chk==1):
+            sel_chk=input("確認? 1:正確 ,2:錯誤:")
+            if(sel_chk=="1"):
                 break
             else:
                 #print("Clear Array")
