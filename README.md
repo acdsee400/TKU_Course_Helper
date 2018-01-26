@@ -5,6 +5,7 @@
     *  shutil
     *  re
     *  BeautifulSoup
+    *  requests
 *  本程式的作用
     *  此程式純粹為概念驗證使用
     *  還有 選課系統真爛
